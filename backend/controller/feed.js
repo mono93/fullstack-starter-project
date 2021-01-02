@@ -5,6 +5,9 @@ const { validationResult } = require('express-validator');
 const Post = require('../models/post');
 const User = require('../models/user');
 
+const io = require('../socket');
+const user = require('../models/user');
+
 module.exports = {
 
     getPosts(req, res, next) {
@@ -16,6 +19,7 @@ module.exports = {
             .then(count => {
                 totalItems = count;
                 return Post.find()
+                    .populate('creator')
                     .skip((currentPage - 1) * perPage)
                     .limit(perPage);
             })
@@ -73,6 +77,7 @@ module.exports = {
                 return user.save();
             })
             .then(result => {
+                io.getIo().emit('Posts', { action: 'create', post: { ...post._doc, creator: { _id: req.userId, name: user.name } } })
                 res.status(201).json({
                     message: 'Post created successfully!',
                     post: post,
@@ -127,13 +132,14 @@ module.exports = {
             throw error;
         }
         Post.findById(postId)
+            .populate('creator')
             .then(post => {
                 if (!post) {
                     const error = new Error('Could not find post.');
                     error.statusCode = 404;
                     throw error;
                 }
-                if (post.creator.toString() !== req.userId) {
+                if (post.creator._id.toString() !== req.userId) {
                     const error = new Error('Not authorized!');
                     error.statusCode = 403;
                     throw error;
@@ -147,6 +153,7 @@ module.exports = {
                 return post.save();
             })
             .then(result => {
+                io.getIo().emit('Posts', { action: 'update', post: result });
                 res.status(200).send({ message: 'Post updated!', post: result });
             })
             .catch(err => {
@@ -183,7 +190,7 @@ module.exports = {
                 return user.save();
             })
             .then(result => {
-                console.log(result);
+                io.getIo().emit('Posts', { action: 'delete', post: postId });
                 res.status(200).send({ message: 'Deleted post.' });
             })
             .catch(err => {
